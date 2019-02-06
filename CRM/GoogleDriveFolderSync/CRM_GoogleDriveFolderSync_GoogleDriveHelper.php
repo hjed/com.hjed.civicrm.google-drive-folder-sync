@@ -170,6 +170,11 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
     $remoteGroupDAO = CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder::getByOptionGroupValue($remoteGroup);
     self::refreshLocalPermissionsCache($remoteGroupDAO->google_id);
 
+    if(!key_exists(intval($contactId), self::$googleDrivePermsCache[$remoteGroupDAO->google_id][$remoteGroupDAO->role])) {
+      CRM_Core_Error::debug_log_message("Tried to remove user from google calendar, but they weren't there");
+      return;
+    }
+
     $response = self::callGoogleApi(
       '/files/' .
       $remoteGroupDAO->google_id .
@@ -206,7 +211,12 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
       // (for now this only support contacts that already exist in civicrm)
       if(!key_exists($googleId, self::$googleDrivePermsCache)) {
         self::$googleDrivePermsCache[$googleId] = array();
+        // populate all roles, as not all roles may occur for a given id, but we expect all of them
+        foreach (CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder::G_DRIVE_ROLES as $roles) {
+          self::$googleDrivePermsCache[$googleId][$roles] = array();
+        }
       }
+      // we still need to handle roles that may be new to the api
       if(!key_exists($permission['role'], self::$googleDrivePermsCache[$googleId])) {
         self::$googleDrivePermsCache[$googleId][$permission['role']] = array();
       }
