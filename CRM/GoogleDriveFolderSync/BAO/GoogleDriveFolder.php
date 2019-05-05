@@ -4,7 +4,16 @@ use CRM_GoogleDriveFolderSync_ExtensionUtil as E;
 class CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder extends CRM_GoogleDriveFolderSync_DAO_GoogleDriveFolder {
 
   const G_DRIVE_ROLES = array(
-    'owner', 'organizer', 'fileOrganizer', 'writer', 'commenter', 'reader'
+    'owner', 'writer', 'commenter', 'reader'
+  );
+
+  /**
+   * map of roles to roles they should not override
+   */
+  const G_DRIVE_ROLE_IGNORE_IF = array(
+    'reader' => array('commenter', 'writer', 'owner'),
+    'commenter' =>  array('writer', 'owner'),
+    'writer' => array('owner')
   );
   /**
    * Create a new GoogleDriveFolder based on array-data

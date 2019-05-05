@@ -193,9 +193,8 @@ function google_drive_folder_sync_civicrm_oauthsync_google_drive_folder_sync_get
  */
 function google_drive_folder_sync_civicrm_oauthsync_google_drive_folder_sync_update_remote_users(&$remoteGroupName, &$toRemove, &$toAdd) {
 
-  foreach ($toAdd as $contactId) {
-    CRM_GoogleDriveFolderSync_GoogleDriveHelper::addContactToRemoteGroup($contactId, $remoteGroupName);
-  }
+  CRM_GoogleDriveFolderSync_GoogleDriveHelper::addContactsToRemoteGroup($toAdd, $remoteGroupName);
+
   // TODO: handle the above being an error
   foreach($toRemove as $contactId) {
     CRM_GoogleDriveFolderSync_GoogleDriveHelper::removeContactFromRemoteGroup($contactId, $remoteGroupName);

@@ -6,6 +6,7 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
 
   const TOKEN_URL = "https://www.googleapis.com/oauth2/v4/token";
   const GOOGLE_DRIVE_REST_API_URL = 'https://www.googleapis.com/drive/v3';
+  const GOOGLE_LOCATION_TYPE_NAME = "Google Account";
 
   public static function oauthHelper() {
     static $oauthHelperObj = null;
@@ -133,7 +134,30 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
    * @throws CiviCRM_API3_Exception
    */
   private static function getContactEmail($contactId) {
-    return CRM_Contact_BAO_Contact::getPrimaryEmail($contactId);
+    $locationId = self::getGoogleEmailLocationId();
+    $result = civicrm_api3('Email', 'get', [
+      'sequential' => 1,
+      'contact_id' => $contactId,
+    ]);
+    $email = "";
+    foreach ($result['values'] as $emailInfo) {
+      // default to google
+      if($locationId == $emailInfo['location_type_id']) {
+        return $emailInfo['email'];
+      } else if($emailInfo['is_primary'] == 1) {
+        $email = $emailInfo['email'];
+      }
+    }
+    return $email;
+  }
+
+  private static function getGoogleEmailLocationId() {
+    $result = civicrm_api3('LocationType', 'get', [
+      'sequential' => 1,
+      'return' => ["id"],
+      'name' => "Google Account",
+    ]);
+    return array_pop($result['values'])['id'];
   }
 
   /**
@@ -141,11 +165,21 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
    * If the contact has not been synced before it will add its Google Drive account details
    * @param $contactId the contact id of the remote contact
    * @param $remoteGroup the remote group name
+   * @param $refreshCache if we should refresh the cache before checking permissions
    */
-  public static function addContactToRemoteGroup($contactId, $remoteGroup) {
+  public static function addContactToRemoteGroup($contactId, $remoteGroup, $refreshCache=true) {
     // get the remote group
     $remoteGroup = CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder::getByOptionGroupValue($remoteGroup);
 
+    if($refreshCache) {
+      self::refreshLocalPermissionsCache($remoteGroup->google_id);
+    }
+    // check the contact doesn't already have a higher permission in the group
+    foreach (CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder::G_DRIVE_ROLE_IGNORE_IF[$remoteGroup->role] as $superiorRole) {
+      if (array_key_exists(intval($contactId), self::$googleDrivePermsCache[$remoteGroup->google_id][$superiorRole])) {
+        return;
+      }
+    }
 
     $contactEmail = self::getContactEmail($contactId);
 
@@ -157,8 +191,26 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
       )
     );
 
+    // this means the email was an alias
+    if(array_key_exists('emailAddress', $response) && $response['emailAddress'] != $contactEmail) {
+      civicrm_api3('Email', 'create', [
+        'contact_id' => $contactId,
+        'email' => $response['emailAddress'],
+        'location_type_id' => self::GOOGLE_LOCATION_TYPE_NAME
+      ]);
+    }
+
     self::$googleDrivePermsCache[$remoteGroup->google_id][$remoteGroup->role][$contactId] =
       array($response['id'], $response);
+  }
+
+  public static function addContactsToRemoteGroup(&$toAdd, $remoteGroup) {
+    // get the remote group
+    $remoteGroupData = CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder::getByOptionGroupValue($remoteGroup);
+    self::refreshLocalPermissionsCache($remoteGroupData->google_id);
+    foreach ($toAdd as $contactId) {
+      self::addContactToRemoteGroup($contactId, $remoteGroup, false);
+    }
   }
 
   /**
@@ -205,17 +257,18 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
 
     $response = self::callGoogleApi('/files/' . $googleId . '/permissions?fields=permissions');
     // TODO: error handling and pagination
+
+    if(!key_exists($googleId, self::$googleDrivePermsCache)) {
+      self::$googleDrivePermsCache[$googleId] = array();
+      // populate all roles, as not all roles may occur for a given id, but we expect all of them
+      foreach (CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder::G_DRIVE_ROLES as $roles) {
+        self::$googleDrivePermsCache[$googleId][$roles] = array();
+      }
+    }
     foreach($response['permissions'] as $permission) {
       $contact = CRM_Contact_BAO_Contact::matchContactOnEmail($permission['emailAddress']);
       // drop contacts we don't match
       // (for now this only support contacts that already exist in civicrm)
-      if(!key_exists($googleId, self::$googleDrivePermsCache)) {
-        self::$googleDrivePermsCache[$googleId] = array();
-        // populate all roles, as not all roles may occur for a given id, but we expect all of them
-        foreach (CRM_GoogleDriveFolderSync_BAO_GoogleDriveFolder::G_DRIVE_ROLES as $roles) {
-          self::$googleDrivePermsCache[$googleId][$roles] = array();
-        }
-      }
       // we still need to handle roles that may be new to the api
       if(!key_exists($permission['role'], self::$googleDrivePermsCache[$googleId])) {
         self::$googleDrivePermsCache[$googleId][$permission['role']] = array();
