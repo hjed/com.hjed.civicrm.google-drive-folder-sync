@@ -257,8 +257,8 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
 
     $response = self::callGoogleApi('/files/' . $googleId . '/permissions?fields=permissions');
     $permissions = $response['permissions'];
-    while(array_key_exists('nextPageToken', $response) && $response['nextPageToken'] == null) {
-      $response = self::callGoogleApi('/files/' . $googleId . '/permissions?fields=permissions');
+    while(array_key_exists('nextPageToken', $response) && $response['nextPageToken'] != null) {
+      $response = self::callGoogleApi('/files/' . $googleId . '/permissions?fields=permissions&pageToken=' . $response['nextPageToken']);
       $permissions += $response['permissions'];
     }
     // TODO: error handling and pagination
@@ -270,7 +270,7 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
         self::$googleDrivePermsCache[$googleId][$roles] = array();
       }
     }
-    foreach($response['permissions'] as $permission) {
+    foreach($permissions as $permission) {
       $contact = CRM_Contact_BAO_Contact::matchContactOnEmail($permission['emailAddress']);
       // drop contacts we don't match
       // (for now this only support contacts that already exist in civicrm)
