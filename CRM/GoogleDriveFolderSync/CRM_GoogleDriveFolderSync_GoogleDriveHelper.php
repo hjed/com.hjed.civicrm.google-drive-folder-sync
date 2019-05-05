@@ -256,6 +256,11 @@ class CRM_GoogleDriveFolderSync_GoogleDriveHelper {
     }
 
     $response = self::callGoogleApi('/files/' . $googleId . '/permissions?fields=permissions');
+    $permissions = $response['permissions'];
+    while(array_key_exists('nextPageToken', $response) && $response['nextPageToken'] == null) {
+      $response = self::callGoogleApi('/files/' . $googleId . '/permissions?fields=permissions');
+      $permissions += $response['permissions'];
+    }
     // TODO: error handling and pagination
 
     if(!key_exists($googleId, self::$googleDrivePermsCache)) {
